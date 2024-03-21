@@ -209,6 +209,8 @@ export class FaustMonoDspGenerator implements IFaustMonoDspGenerator {
         if (sp) {
             const instance = await FaustWasmInstantiator.createAsyncMonoDSPInstance(factory);
             const monoDsp = new FaustMonoWebAudioDsp(instance, context.sampleRate, sampleSize, bufferSize);
+            // Initialize the DSP instance, possibly loading soundfiles
+            await monoDsp.init(context);
             const sp = context.createScriptProcessor(bufferSize, monoDsp.getNumInputs(), monoDsp.getNumOutputs()) as FaustMonoScriptProcessorNode;
             Object.setPrototypeOf(sp, FaustMonoScriptProcessorNode.prototype);
             sp.init(monoDsp);
@@ -370,6 +372,8 @@ const dependencies = {
         const instance = await FaustWasmInstantiator.createAsyncMonoDSPInstance(factory);
         const sampleSize = meta.compile_options.match("-double") ? 8 : 4;
         const monoDsp = new FaustMonoWebAudioDsp(instance, sampleRate, sampleSize, bufferSize);
+        // Initialize the DSP instance, no soundfiles loading for now (TODO ?)
+        await monoDsp.init(null);
         return new FaustMonoOfflineProcessor(monoDsp, bufferSize);
     }
 
