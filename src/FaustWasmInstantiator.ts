@@ -21,7 +21,7 @@ class FaustWasmInstantiator {
                 _coshf: Math.cosh, _sinhf: Math.sinh, _tanhf: Math.tanh,
                 _isnanf: Number.isNaN, _isinff: (x: number) => !isFinite(x),
                 _copysignf: (x: number, y: number) => (Math.sign(x) === Math.sign(y) ? x : -x),
-        
+
                 // Double version
                 _acos: Math.acos, _asin: Math.asin, _atan: Math.atan, _atan2: Math.atan2,
                 _ceil: Math.ceil, _cos: Math.cos, _exp: Math.exp, _floor: Math.floor,
@@ -33,7 +33,7 @@ class FaustWasmInstantiator {
                 _cosh: Math.cosh, _sinh: Math.sinh, _tanh: Math.tanh,
                 _isnan: Number.isNaN, _isinf: (x: number) => !isFinite(x),
                 _copysign: (x: number, y: number) => (Math.sign(x) === Math.sign(y) ? x : -x),
-        
+
                 table: new WebAssembly.Table({ initial: 0, element: "anyfunc" })
             }
         };
@@ -52,7 +52,7 @@ class FaustWasmInstantiator {
         let memorySize = pow2limit(
             effectSize
             + dspMeta.size * voices
-            + (dspMeta.inputs + dspMeta.outputs * 2)
+            + (dspMeta.inputs + dspMeta.outputs * 2)  // + 2 for effect
             * (ptrSize + bufferSize * sampleSize)
         ) / 65536;
         memorySize = Math.max(2, memorySize); // At least 2
@@ -102,7 +102,7 @@ class FaustWasmInstantiator {
             throw e;
         }
     }
-    
+
     static async loadDSPMixer(mixerPath: string, fs?: typeof FS) {
         try {
             let mixerBuffer = null;
@@ -119,17 +119,17 @@ class FaustWasmInstantiator {
             throw e;
         }
     }
-    
+
     static async createAsyncMonoDSPInstance(factory: LooseFaustDspFactory) {
         const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport());
         return this.createMonoDSPInstanceAux(instance, factory.json);
     }
-    
+
     static createSyncMonoDSPInstance(factory: LooseFaustDspFactory) {
         const instance = new WebAssembly.Instance(factory.module, this.createWasmImport());
         return this.createMonoDSPInstanceAux(instance, factory.json);
     }
-    
+
     static async createAsyncPolyDSPInstance(voiceFactory: LooseFaustDspFactory, mixerModule: WebAssembly.Module, voices: number, effectFactory?: LooseFaustDspFactory): Promise<FaustPolyDspInstance> {
         const memory = this.createMemoryAux(voices, voiceFactory, effectFactory);
         // Create voice 
@@ -138,7 +138,7 @@ class FaustWasmInstantiator {
         const voiceAPI = new FaustDspInstance(voiceFunctions);
         // Create mixer
         const mixerAPI = this.createMixerAux(mixerModule, memory);
-    
+
         // Possibly create effect instance 
         if (effectFactory) {
             const effectInstance = await WebAssembly.instantiate(effectFactory.module, this.createWasmImport(memory));
@@ -163,7 +163,7 @@ class FaustWasmInstantiator {
             };
         }
     }
-    
+
     static createSyncPolyDSPInstance(voiceFactory: LooseFaustDspFactory, mixerModule: WebAssembly.Module, voices: number, effectFactory?: LooseFaustDspFactory): FaustPolyDspInstance {
         const memory = this.createMemoryAux(voices, voiceFactory, effectFactory);
         // Create voice 
@@ -172,7 +172,7 @@ class FaustWasmInstantiator {
         const voiceAPI = new FaustDspInstance(voiceFunctions);
         // Create mixer
         const mixerAPI = this.createMixerAux(mixerModule, memory);
-    
+
         // Possibly create effect instance 
         if (effectFactory) {
             const effectInstance = new WebAssembly.Instance(effectFactory.module, this.createWasmImport(memory));
