@@ -38,7 +38,7 @@ class FaustWasmInstantiator {
             }
         };
     }
-    private static createWasmMemory(voicesIn: number, sampleSize: number, dspMeta: FaustDspMeta, effectMeta: FaustDspMeta, bufferSize: number) {
+    private static createWasmMemoryPoly(voicesIn: number, sampleSize: number, dspMeta: FaustDspMeta, effectMeta: FaustDspMeta, bufferSize: number) {
         // Hack : at least 4 voices (to avoid weird wasm memory bug?)
         const voices = Math.max(4, voicesIn);
         // Memory allocator
@@ -58,19 +58,35 @@ class FaustWasmInstantiator {
         memorySize = Math.max(2, memorySize); // At least 2
         return new WebAssembly.Memory({ initial: memorySize, maximum: memorySize });
     };
+
+    private static createWasmMemoryMono(sampleSize: number, dspMeta: FaustDspMeta, bufferSize: number) {
+        // Memory allocator
+        const ptrSize = sampleSize; // Done on wast/wasm backend side
+        const memorySize = dspMeta.size + (dspMeta.inputs + dspMeta.outputs) * (ptrSize + bufferSize * sampleSize) / 65536;
+        return new WebAssembly.Memory({ initial: memorySize * 2 }); // Safer to have a bit more memory
+    }
+
     private static createMonoDSPInstanceAux(instance: WebAssembly.Instance, json: string) {
         const functions = instance.exports as IFaustDspInstance & WebAssembly.Exports;
         const api = new FaustDspInstance(functions);
         const memory: any = instance.exports.memory;
         return { memory, api, json } as FaustMonoDspInstance;
     }
-    private static createMemoryAux(voices: number, voiceFactory: LooseFaustDspFactory, effectFactory?: LooseFaustDspFactory) {
+
+    private static createMemoryMono(monoFactory: LooseFaustDspFactory) {
+        // Parse JSON to get 'size' and 'inputs/outputs' infos
+        const monoMeta: FaustDspMeta = JSON.parse(monoFactory.json);
+        const sampleSize = monoMeta.compile_options.match("-double") ? 8 : 4;
+        return this.createWasmMemoryMono(sampleSize, monoMeta, 8192);
+
+    }
+    private static createMemoryPoly(voices: number, voiceFactory: LooseFaustDspFactory, effectFactory?: LooseFaustDspFactory) {
         // Parse JSON to get 'size' and 'inputs/outputs' infos
         const voiceMeta: FaustDspMeta = JSON.parse(voiceFactory.json);
         const effectMeta: FaustDspMeta = (effectFactory && effectFactory.json) ? JSON.parse(effectFactory.json) : null;
         const sampleSize = voiceMeta.compile_options.match("-double") ? 8 : 4;
         // Memory will be shared by voice, mixer and (possibly) effect instances
-        return this.createWasmMemory(voices, sampleSize, voiceMeta, effectMeta, 8192);
+        return this.createWasmMemoryPoly(voices, sampleSize, voiceMeta, effectMeta, 8192);
     }
     private static createMixerAux(mixerModule: WebAssembly.Module, memory: WebAssembly.Memory) {
         // Create mixer instance
@@ -121,17 +137,21 @@ class FaustWasmInstantiator {
     }
 
     static async createAsyncMonoDSPInstance(factory: LooseFaustDspFactory) {
-        const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport());
+        const memory = this.createMemoryMono(factory);
+        //const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport());
+        const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport(memory));
         return this.createMonoDSPInstanceAux(instance, factory.json);
     }
 
     static createSyncMonoDSPInstance(factory: LooseFaustDspFactory) {
-        const instance = new WebAssembly.Instance(factory.module, this.createWasmImport());
+        const memory = this.createMemoryMono(factory);
+        //const instance = new WebAssembly.Instance(factory.module, this.createWasmImport());
+        const instance = new WebAssembly.Instance(factory.module, this.createWasmImport(memory));
         return this.createMonoDSPInstanceAux(instance, factory.json);
     }
 
     static async createAsyncPolyDSPInstance(voiceFactory: LooseFaustDspFactory, mixerModule: WebAssembly.Module, voices: number, effectFactory?: LooseFaustDspFactory): Promise<FaustPolyDspInstance> {
-        const memory = this.createMemoryAux(voices, voiceFactory, effectFactory);
+        const memory = this.createMemoryPoly(voices, voiceFactory, effectFactory);
         // Create voice 
         const voiceInstance = await WebAssembly.instantiate(voiceFactory.module, this.createWasmImport(memory));
         const voiceFunctions = voiceInstance.exports as IFaustDspInstance & WebAssembly.Exports;
@@ -165,7 +185,7 @@ class FaustWasmInstantiator {
     }
 
     static createSyncPolyDSPInstance(voiceFactory: LooseFaustDspFactory, mixerModule: WebAssembly.Module, voices: number, effectFactory?: LooseFaustDspFactory): FaustPolyDspInstance {
-        const memory = this.createMemoryAux(voices, voiceFactory, effectFactory);
+        const memory = this.createMemoryPoly(voices, voiceFactory, effectFactory);
         // Create voice 
         const voiceInstance = new WebAssembly.Instance(voiceFactory.module, this.createWasmImport(memory));
         const voiceFunctions = voiceInstance.exports as IFaustDspInstance & WebAssembly.Exports;
