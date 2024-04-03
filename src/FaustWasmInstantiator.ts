@@ -66,10 +66,10 @@ class FaustWasmInstantiator {
         return new WebAssembly.Memory({ initial: memorySize * 2 }); // Safer to have a bit more memory
     }
 
-    private static createMonoDSPInstanceAux(instance: WebAssembly.Instance, json: string) {
+    private static createMonoDSPInstanceAux(memory: WebAssembly.Memory, instance: WebAssembly.Instance, json: string) {
         const functions = instance.exports as IFaustDspInstance & WebAssembly.Exports;
         const api = new FaustDspInstance(functions);
-        const memory: any = instance.exports.memory;
+        //const memory: any = instance.exports.memory;
         return { memory, api, json } as FaustMonoDspInstance;
     }
 
@@ -140,14 +140,16 @@ class FaustWasmInstantiator {
         const memory = this.createMemoryMono(factory);
         //const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport());
         const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport(memory));
-        return this.createMonoDSPInstanceAux(instance, factory.json);
+        //return this.createMonoDSPInstanceAux(instance, factory.json);
+        return this.createMonoDSPInstanceAux(memory, instance, factory.json);
     }
 
     static createSyncMonoDSPInstance(factory: LooseFaustDspFactory) {
         const memory = this.createMemoryMono(factory);
         //const instance = new WebAssembly.Instance(factory.module, this.createWasmImport());
         const instance = new WebAssembly.Instance(factory.module, this.createWasmImport(memory));
-        return this.createMonoDSPInstanceAux(instance, factory.json);
+        //return this.createMonoDSPInstanceAux(instance, factory.json);
+        return this.createMonoDSPInstanceAux(memory, instance, factory.json);
     }
 
     static async createAsyncPolyDSPInstance(voiceFactory: LooseFaustDspFactory, mixerModule: WebAssembly.Module, voices: number, effectFactory?: LooseFaustDspFactory): Promise<FaustPolyDspInstance> {
@@ -172,7 +174,7 @@ class FaustWasmInstantiator {
                 mixerAPI,
                 voiceJSON: voiceFactory.json,
                 effectJSON: effectFactory.json
-            };
+            } as FaustPolyDspInstance;
         } else {
             return {
                 memory,
@@ -180,7 +182,7 @@ class FaustWasmInstantiator {
                 voiceAPI,
                 mixerAPI,
                 voiceJSON: voiceFactory.json
-            };
+            } as FaustPolyDspInstance;
         }
     }
 
@@ -206,7 +208,7 @@ class FaustWasmInstantiator {
                 mixerAPI,
                 voiceJSON: voiceFactory.json,
                 effectJSON: effectFactory.json
-            };
+            } as FaustPolyDspInstance;
         } else {
             return {
                 memory,
@@ -214,7 +216,7 @@ class FaustWasmInstantiator {
                 voiceAPI,
                 mixerAPI,
                 voiceJSON: voiceFactory.json
-            };
+            } as FaustPolyDspInstance;
         }
     }
 }

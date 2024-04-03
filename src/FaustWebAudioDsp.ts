@@ -52,7 +52,7 @@ class WasmAllocator {
         if (newOffset > totalMemoryBytes) {
             // Calculate the number of WebAssembly pages needed to fit the new allocation.
             // WebAssembly memory pages are 64KiB each.
-            const neededPages = Math.ceil((newOffset - totalMemoryBytes) / 64 * 1024);
+            const neededPages = Math.ceil((newOffset - totalMemoryBytes) / 65536);
             // Grow the memory by the required number of pages.
             this.memory.grow(neededPages);
         }
@@ -130,6 +130,12 @@ class Soundfile {
     private readonly fAllocator: WasmAllocator;
 
     constructor(allocator: WasmAllocator, ptrSize: number, sampleSize: number, curChan: number, length: number, maxChan: number, totalParts: number, isDouble: boolean) {
+        // Keep the soundfile structure parameters
+        this.fChannels = curChan;
+        this.fParts = totalParts;
+        this.fIsDouble = isDouble;
+        this.fAllocator = allocator;
+
         // Allocate wasm memory for the soundfile structure
         this.fPtr = allocator.alloc(4 * intSize); // 4 int32: fBuffers, fLength, fSR, fOffset
         this.fLength = allocator.alloc(MAX_SOUNDFILE_PARTS * intSize);
@@ -143,12 +149,6 @@ class Soundfile {
         HEAP32[(this.fPtr + intSize) >> 2] = this.fLength;
         HEAP32[(this.fPtr + 2 * intSize) >> 2] = this.fSR;
         HEAP32[(this.fPtr + 3 * intSize) >> 2] = this.fOffset;
-
-        // Keep the soundfile structure parameters
-        this.fChannels = curChan;
-        this.fParts = totalParts;
-        this.fIsDouble = isDouble;
-        this.fAllocator = allocator;
     }
 
     private allocBuffers(ptrSize: number, sampleSize: number, curChan: number, length: number, maxChan: number): number {
@@ -225,6 +225,7 @@ class SoundfileReader {
         this.fPtrSize = ptrSize;
         this.fSampleSize = sampleSize;
         this.fContext = context;
+        this.fAudioBuffers = [];
     }
 
     /**
@@ -640,7 +641,7 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
                     }
                 });
             } else if (item.type === "soundfile") {
-                this.fSoundfiles.push({ name: item.label, url: item.address });
+                this.fSoundfiles.push({ name: item.label, url: item.url });
             }
         }
     }
@@ -873,7 +874,9 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
 
         // Split the string by ';' to get the individual soundfile names
         // Also, trim each name to remove any leading or trailing spaces
-        return trimmed.split(';').map(name => name.trim().replace(/^'(.*)'$/, "$1"));
+
+        //return trimmed.split(';').map(name => name.trim().replace(/^'(.*)'$/, "$1"));
+        return trimmed.split("';'");
     }
 
     /* Init soundfiles memory */

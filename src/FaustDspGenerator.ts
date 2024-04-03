@@ -198,7 +198,8 @@ export class FaustMonoDspGenerator implements IFaustMonoDspGenerator {
         context: BaseAudioContext,
         name = this.name,
         factory = this.factory as LooseFaustDspFactory,
-        sp = false as SP,
+        //sp = false as SP,
+        sp = true as SP,
         bufferSize = 1024,
         processorName = factory?.shaKey || name
     ): Promise<SP extends true ? FaustMonoScriptProcessorNode | null : FaustMonoAudioWorkletNode | null> {
