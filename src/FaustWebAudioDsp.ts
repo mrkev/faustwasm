@@ -149,6 +149,8 @@ class Soundfile {
         HEAP32[(this.fPtr + intSize) >> 2] = this.fLength;
         HEAP32[(this.fPtr + 2 * intSize) >> 2] = this.fSR;
         HEAP32[(this.fPtr + 3 * intSize) >> 2] = this.fOffset;
+
+        this.displayMemory("Allocated soundfile structure");
     }
 
     private allocBuffers(ptrSize: number, sampleSize: number, curChan: number, length: number, maxChan: number): number {
@@ -157,6 +159,7 @@ class Soundfile {
         for (let chan = 0; chan < curChan; chan++) {
             HEAP32[(buffers >> 2) + chan] = this.fAllocator.alloc(length * sampleSize);
         }
+        this.displayMemory("Allocated soundfile buffers");
         return buffers;
     }
 
@@ -173,12 +176,15 @@ class Soundfile {
         HEAP32[(this.fLength >> 2) + part] = buffer.length;
         HEAP32[(this.fSR >> 2) + part] = buffer.sampleRate;
         HEAP32[(this.fOffset >> 2) + part] = offset;
+
+        this.displayMemory("IN copyToOut, BEFORE copyToOutReal", true);
         // Copy the soundfile data to the buffer
         if (this.fIsDouble) {
             this.copyToOutReal(maxChannels, offset, buffer, this.fAllocator.getFloat64Array());
         } else {
             this.copyToOutReal(maxChannels, offset, buffer, this.fAllocator.getFloat32Array());
         }
+        this.displayMemory("IN copyToOut, AFTER copyToOutReal");
     }
 
     copyToOutReal(maxChannels: number, offset: number, buffer: AudioBuffer, HEAPF: Float32Array | Float64Array) {
@@ -186,8 +192,13 @@ class Soundfile {
         for (let chan = 0; chan < buffer.numberOfChannels; chan++) {
             const input: Float32Array = buffer.getChannelData(chan);
             const output = HEAP32[(this.fBuffers >> 2) + chan];
+            console.log("output: " + output);
+            const shift: number = (HEAPF instanceof Float32Array) ? 2 : 3;
             for (let sample = 0; sample < input.length; sample++) {
-                HEAPF[(output >> 2) + offset + sample] = input[sample];
+                //HEAPF[(output >> 2) + offset + sample] = input[sample];
+                const sampleOffset = (output << shift) + offset + sample;
+                const sampleValue = input[sample];
+                //HEAPF[(output << shift) + offset + sample] = input[sample];
             }
         }
     }
@@ -203,10 +214,37 @@ class Soundfile {
         return offset + BUFFER_SIZE;
     }
 
+    displayMemory(where: string = "", mem: boolean = false) {
+        console.log("Soundfile memory: " + where);
+        console.log(`fPtr: ${this.fPtr}`);
+        console.log(`fBuffers: ${this.fBuffers}`);
+        console.log(`fLength: ${this.fLength}`);
+        console.log(`fSR: ${this.fSR}`);
+        console.log(`fOffset: ${this.fOffset}`);
+        const HEAP32 = this.fAllocator.getInt32Array();
+        if (mem) console.log(`HEAP32: ${HEAP32}`);
+        console.log(`HEAP32[this.fPtr >> 2]: ${HEAP32[this.fPtr >> 2]}`);
+        console.log(`HEAP32[(this.fPtr + intSize) >> 2]: ${HEAP32[(this.fPtr + intSize) >> 2]}`);
+        console.log(`HEAP32[(this.fPtr + 2 * intSize) >> 2]: ${HEAP32[(this.fPtr + 2 * intSize) >> 2]}`);
+        console.log(`HEAP32[(this.fPtr + 3 * intSize) >> 2]: ${HEAP32[(this.fPtr + 3 * intSize) >> 2]}`);
+    }
+
     // Return the pointer to the soundfile structure in wasm memory
     getPtr(): number {
         return this.fPtr;
     }
+
+    getHEAP32(): Int32Array {
+        return this.fAllocator.getInt32Array();
+    }
+    getHEAPFloat32(): Float32Array {
+        return this.fAllocator.getFloat32Array();
+    }
+
+    getHEAPFloat64(): Float64Array {
+        return this.fAllocator.getFloat64Array();
+    }
+
 }
 
 /**
@@ -271,7 +309,9 @@ class SoundfileReader {
         const item = this.fAudioBuffers.find(entry => entry.pathName === pathName);
         // Copy the soundfile data to the buffer
         if (item) {
+            soundfile.displayMemory("BEFORE copyToOut");
             soundfile.copyToOut(part, maxChan, offset, item.audioBuffer);
+            soundfile.displayMemory("AFTER copyToOut");
             return offset + item.audioBuffer.length;
         } else {
             console.error(`Failed to access sound file from ${pathName}`);
@@ -311,6 +351,7 @@ class SoundfileReader {
             // Create the soundfile
             let soundfile = new Soundfile(this.fAllocator, this.fPtrSize, this.fSampleSize, curChan, totalLength, maxChan, pathNameList.length, isDouble);
 
+            soundfile.displayMemory("After soundfile creation");
             // Init offset
             let offset = 0;
 
@@ -325,13 +366,19 @@ class SoundfileReader {
                 }
             }
 
+            soundfile.displayMemory("After reading soundfiles");
+
             // Complete with empty parts
             for (let part = pathNameList.length; part < MAX_SOUNDFILE_PARTS; part++) {
                 offset = soundfile.emptyFile(part, offset);
             }
 
+            soundfile.displayMemory("After emptyFile");
+
             // Share the same buffers for all other channels so that we have maxChan channels available
             soundfile.shareBuffers(curChan, maxChan);
+
+            soundfile.displayMemory("After shareBuffers");
 
             return soundfile;
 
@@ -584,6 +631,8 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
 
     protected fDestroyed: boolean;
 
+    protected fFirstCall: boolean;
+
     protected fJSONDsp!: FaustDspMeta;
 
     constructor(sampleSize: number, bufferSize: number) {
@@ -615,6 +664,7 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
 
         this.fProcessing = false;
         this.fDestroyed = false;
+        this.fFirstCall = true;
 
         this.fUICallback = (item: FaustUIItem) => {
             if (item.type === "hbargraph" || item.type === "vbargraph") {
@@ -891,13 +941,28 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
         // Create and fill the soundfile structure
         let sf_offset: number = this.fDSP;
         const HEAP = this.fInstance.memory.buffer;
-        const HEAP32 = new Int32Array(HEAP);
+        //const HEAP32 = new Int32Array(HEAP);
         this.fSoundfiles.forEach(async ({ name, url }) => {
             // Create the soundfiles
             const soundfile = await sfReader.createSoundfile(this.splitNames(url), MAX_CHAN, this.gSampleSize === 8);
             if (soundfile) {
+
+                soundfile.displayMemory("After createSoundfile");
+
+                //const HEAP32 = new Int32Array(HEAP); // Update HEAP32 after soundfile creation
+                const HEAP32 = soundfile.getHEAP32();
+
                 // Fill the soundfile structure in wasm memory, sounfiles are at the beginning of the DSP memory
-                HEAP32[sf_offset++ >> 2] = soundfile.getPtr();
+                const ptr = soundfile.getPtr();
+
+                HEAP32[sf_offset++ << 2] = soundfile.getPtr();
+                console.log(`Soundfile ${name} loaded at ${ptr} in wasm memory`);
+
+                console.log("HEAP32[this.fPtr >> 2]", HEAP32[ptr >> 2]);
+                console.log("HEAP32[(this.fDSP + intSize) >> 2]", HEAP32[(ptr + intSize) >> 2]);
+                console.log("HEAP32[(this.fDSP + 2 * intSize) >> 2]", HEAP32[(ptr + 2 * intSize) >> 2]);
+                console.log("HEAP32[(this.fDSP + 3 * intSize) >> 2]", HEAP32[(ptr + 3 * intSize) >> 2]);
+
             }
         });
     }
@@ -919,6 +984,12 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
 
         // Check Processing state: the node returns 'true' to stay in the graph, even if not processing
         if (!this.fProcessing) return true;
+
+        // Init memory on first call (since WebAssembly.memory.grow() may have been called)
+        if (this.fFirstCall) {
+            this.initMemory();
+            this.fFirstCall = false;
+        }
 
         if (typeof input === "function") {
             // Call input callback to avoid array copy
@@ -962,6 +1033,7 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
             for (let chan = 0; chan < Math.min(this.getNumOutputs(), output.length); chan++) {
                 const dspOutput = this.fOutChannels[chan];
                 output[chan].set(dspOutput);
+                console.log("chan" + chan, output[chan][0]);
             }
             forPlot = output;
         }
