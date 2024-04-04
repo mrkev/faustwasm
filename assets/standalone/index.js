@@ -205,7 +205,7 @@ const createFaustUI = async (faustNode) => {
 
 (async () => {
     const { faustNode, dspMeta: { name } } = await createFaustNode(audioContext, "FAUST_DSP");
-    //await createFaustUI(faustNode);
+    await createFaustUI(faustNode);
     faustNode.connect(audioContext.destination);
     if (faustNode.numberOfInputs) await buildAudioDeviceMenu(faustNode);
     else $spanAudioInput.hidden = true;

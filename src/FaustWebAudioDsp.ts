@@ -55,6 +55,7 @@ class WasmAllocator {
             const neededPages = Math.ceil((newOffset - totalMemoryBytes) / 65536);
             // Grow the memory by the required number of pages.
             this.memory.grow(neededPages);
+            console.log(`GROW: ${neededPages} pages`);
         }
 
         // Update the allocated bytes to the new offset.
@@ -127,6 +128,7 @@ class Soundfile {
     private readonly fChannels: number;
     private readonly fParts: number;
     private readonly fIsDouble: boolean;
+    private readonly fSampleSize: number;
     private readonly fAllocator: WasmAllocator;
 
     constructor(allocator: WasmAllocator, ptrSize: number, sampleSize: number, curChan: number, length: number, maxChan: number, totalParts: number, isDouble: boolean) {
@@ -134,6 +136,7 @@ class Soundfile {
         this.fChannels = curChan;
         this.fParts = totalParts;
         this.fIsDouble = isDouble;
+        this.fSampleSize = sampleSize;
         this.fAllocator = allocator;
 
         // Allocate wasm memory for the soundfile structure
@@ -143,6 +146,8 @@ class Soundfile {
         this.fOffset = allocator.alloc(MAX_SOUNDFILE_PARTS * intSize);
         this.fBuffers = this.allocBuffers(ptrSize, sampleSize, curChan, length, maxChan);
 
+        this.displayMemory("Allocated soundfile structure 1");
+
         // Set the soundfile structure in wasm memory
         const HEAP32 = this.fAllocator.getInt32Array();
         HEAP32[this.fPtr >> 2] = this.fBuffers;
@@ -150,14 +155,25 @@ class Soundfile {
         HEAP32[(this.fPtr + 2 * intSize) >> 2] = this.fSR;
         HEAP32[(this.fPtr + 3 * intSize) >> 2] = this.fOffset;
 
-        this.displayMemory("Allocated soundfile structure");
+        for (let chan = 0; chan < curChan; chan++) {
+            const buffer: number = HEAP32[(this.fBuffers >> 2) + chan];
+            console.log(`allocBuffers AFTER: ${chan} - ${buffer}`);
+        }
+
+        this.displayMemory("Allocated soundfile structure 2");
     }
 
     private allocBuffers(ptrSize: number, sampleSize: number, curChan: number, length: number, maxChan: number): number {
         const buffers = this.fAllocator.alloc(maxChan * ptrSize);
-        const HEAP32 = this.fAllocator.getInt32Array();
+
+        console.log(`allocBuffers buffers: ${buffers}`);
+
         for (let chan = 0; chan < curChan; chan++) {
-            HEAP32[(buffers >> 2) + chan] = this.fAllocator.alloc(length * sampleSize);
+            const buffer: number = this.fAllocator.alloc(length * sampleSize);
+            // HEAP32 is the Int32Array view of the memory buffer which can change after grow in `alloc` method
+            // so we need to recompute the buffer address
+            const HEAP32 = this.fAllocator.getInt32Array();
+            HEAP32[(buffers >> 2) + chan] = buffer;
         }
         this.displayMemory("Allocated soundfile buffers");
         return buffers;
@@ -180,28 +196,41 @@ class Soundfile {
         this.displayMemory("IN copyToOut, BEFORE copyToOutReal", true);
         // Copy the soundfile data to the buffer
         if (this.fIsDouble) {
-            this.copyToOutReal(maxChannels, offset, buffer, this.fAllocator.getFloat64Array());
+            this.copyToOutReal64(maxChannels, offset, buffer);
         } else {
-            this.copyToOutReal(maxChannels, offset, buffer, this.fAllocator.getFloat32Array());
+            this.copyToOutReal32(maxChannels, offset, buffer);
         }
         this.displayMemory("IN copyToOut, AFTER copyToOutReal");
     }
 
-    copyToOutReal(maxChannels: number, offset: number, buffer: AudioBuffer, HEAPF: Float32Array | Float64Array) {
+    copyToOutReal32(maxChannels: number, offset: number, buffer: AudioBuffer) {
         const HEAP32 = this.fAllocator.getInt32Array();
+        const HEAPF = this.fAllocator.getFloat32Array();
         for (let chan = 0; chan < buffer.numberOfChannels; chan++) {
             const input: Float32Array = buffer.getChannelData(chan);
-            const output = HEAP32[(this.fBuffers >> 2) + chan];
-            console.log("output: " + output);
-            const shift: number = (HEAPF instanceof Float32Array) ? 2 : 3;
+            const output: number = HEAP32[(this.fBuffers >> 2) + chan];
+            const outputReal: Float32Array = HEAPF.subarray((output + offset * this.fSampleSize) >> Math.log2(this.fSampleSize),
+                (output + (offset + input.length) * this.fSampleSize) >> Math.log2(this.fSampleSize));
             for (let sample = 0; sample < input.length; sample++) {
-                //HEAPF[(output >> 2) + offset + sample] = input[sample];
-                const sampleOffset = (output << shift) + offset + sample;
-                const sampleValue = input[sample];
-                //HEAPF[(output << shift) + offset + sample] = input[sample];
+                outputReal[sample] = input[sample];
             }
         }
     }
+
+    copyToOutReal64(maxChannels: number, offset: number, buffer: AudioBuffer) {
+        const HEAP32 = this.fAllocator.getInt32Array();
+        const HEAPF = this.fAllocator.getFloat64Array();
+        for (let chan = 0; chan < buffer.numberOfChannels; chan++) {
+            const input: Float32Array = buffer.getChannelData(chan);
+            const output: number = HEAP32[(this.fBuffers >> 2) + chan];
+            const outputReal: Float64Array = HEAPF.subarray((output + offset * this.fSampleSize) >> Math.log2(this.fSampleSize),
+                (output + (offset + input.length) * this.fSampleSize) >> Math.log2(this.fSampleSize));
+            for (let sample = 0; sample < input.length; sample++) {
+                outputReal[sample] = input[sample];
+            }
+        }
+    }
+
 
     emptyFile(part: number, offset: number): number {
         // Set the soundfile buffer in wasm memory
@@ -920,13 +949,9 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
     // Split the soundfile names and return an array of names
     private splitNames(input: string): string[] {
         // Trim off the curly braces at the start and end, if present
-        const trimmed = input.replace(/^\{|\}$/g, '');
-
-        // Split the string by ';' to get the individual soundfile names
-        // Also, trim each name to remove any leading or trailing spaces
-
-        //return trimmed.split(';').map(name => name.trim().replace(/^'(.*)'$/, "$1"));
-        return trimmed.split("';'");
+        let trimmed = input.replace(/^\{|\}$/g, '');
+        // Split the string into an array of strings and remove first and last characters
+        return trimmed.split(";").map(str => str.length <= 2 ? '' : str.substring(1, str.length - 1));
     }
 
     /* Init soundfiles memory */
