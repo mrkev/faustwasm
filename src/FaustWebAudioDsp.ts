@@ -295,6 +295,57 @@ class SoundfileReader {
     }
 
     /**
+     * Check if the file exists in the given directories.
+     * 
+     * @param directories : the list of directories to search for the file   
+     * @param fileName : the name of the file to search for 
+     * @returns : the path of the file if found, otherwise an empty string
+     */
+    async checkFile(directories: string[], fileName: string): Promise<string> {
+
+        async function checkFileExists(url: string): Promise<boolean> {
+            try {
+                console.log(`"checkFileExists" url: ${url}`);
+                const response = await fetch(url, { method: 'HEAD' });
+                return response.ok; // Will be true if the status code is 200-299
+            } catch (error) {
+                console.error('Fetch error:', error);
+                return false;
+            }
+        }
+
+        if (await checkFileExists(fileName)) {
+            return fileName;
+        } else {
+            for (let i = 0; i < directories.length; i++) {
+                const pathName = directories[i] + "/" + fileName;
+                if (await checkFileExists(pathName)) {
+                    return pathName;
+                }
+            }
+            return "";
+        }
+    }
+
+    /**
+     * Check if all soundfiles exist and return their real path_name.
+     * 
+     * @param directories : the list of directories to search for the file
+     * @param fileNameList : the list of file names to search for
+     * @returns : the list of path names of the files if found, otherwise an empty string
+     */
+    async checkFiles(directories: string[], fileNameList: string[]): Promise<string[]> {
+        const pathNameList: string[] = [];
+        for (let i = 0; i < fileNameList.length; i++) {
+            const pathName: string = await this.checkFile(directories, fileNameList[i]);
+            console.log(`checkFiles pathName: ${pathName}`);
+            // If 'pathName' is not found, it is replaced by an identifier for an empty sound (e.g., silence)
+            pathNameList.push(pathName === "" ? "__empty_sound__" : pathName);
+        }
+        return pathNameList;
+    }
+
+    /**
      * Get the channels and length values of the given sound resource.
      * 
      * @param pathName : the name of the file, or sound resource identified this way
@@ -751,6 +802,60 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
         }
     }
 
+    // Split the soundfile names and return an array of names
+    static splitNames(input: string): string[] {
+        // Trim off the curly braces at the start and end, if present
+        let trimmed = input.replace(/^\{|\}$/g, '');
+        // Split the string into an array of strings and remove first and last characters
+        return trimmed.split(";").map(str => str.length <= 2 ? '' : str.substring(1, str.length - 1));
+    }
+
+    /* Init soundfiles memory */
+    protected async initSFMemory(context: BaseAudioContext, memory: WebAssembly.Memory, endMemory: number, baseDSP: number): Promise<void> {
+
+        // Create memory allocator for soundfiles in wasm memory, starting at the end of DSP memory
+        const allocator = new WasmAllocator(memory, endMemory);
+
+        // Create soundfile reader
+        const sfReader = new SoundfileReader(allocator, context, this.gPtrSize, this.gSampleSize);
+
+        // Create and fill the soundfile structure
+        let sfOffset: number = baseDSP;
+
+        this.fSoundfiles.forEach(async ({ name, url }) => {
+
+            // Add standard directories to look for soundfiles
+            const sfDirectories: string[] = [".", "http://127.0.0.1:8000"];
+
+            // Check if the soundfile exists in the given directories and return the real path
+            const sfPathNames: string[] = await sfReader.checkFiles(sfDirectories, FaustBaseWebAudioDsp.splitNames(url));
+
+            console.log(`Soundfile ${name} paths: ${sfPathNames}`);
+
+            // Create the soundfiles
+            const soundfile = await sfReader.createSoundfile(sfPathNames, MAX_CHAN, this.gSampleSize === 8);
+            if (soundfile) {
+
+                soundfile.displayMemory("After createSoundfile");
+
+                // Update HEAP32 after soundfile creation
+                const HEAP32 = soundfile.getHEAP32();
+
+                // Fill the soundfile structure in wasm memory, sounfiles are at the beginning of the DSP memory
+                const ptr = soundfile.getPtr();
+
+                HEAP32[sfOffset++ << 2] = soundfile.getPtr();
+                console.log(`Soundfile ${name} loaded at ${ptr} in wasm memory`);
+
+                console.log("HEAP32[this.fPtr >> 2]", HEAP32[ptr >> 2]);
+                console.log("HEAP32[(this.fDSP + intSize) >> 2]", HEAP32[(ptr + intSize) >> 2]);
+                console.log("HEAP32[(this.fDSP + 2 * intSize) >> 2]", HEAP32[(ptr + 2 * intSize) >> 2]);
+                console.log("HEAP32[(this.fDSP + 3 * intSize) >> 2]", HEAP32[(ptr + 3 * intSize) >> 2]);
+
+            }
+        });
+    }
+
     protected updateOutputs() {
         if (this.fOutputsItems.length > 0 && this.fOutputHandler && this.fOutputsTimer-- === 0) {
             this.fOutputsTimer = 5;
@@ -882,7 +987,7 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
         // Init soundfiles memory is needed
         if (this.fSoundfiles.length > 0 && context) {
             // Init soundfiles memory
-            await this.initSFMemory(context, this.fEndMemory);
+            await this.initSFMemory(context, this.fInstance.memory, this.fEndMemory, this.fDSP);
         }
     }
 
@@ -945,51 +1050,6 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
     }
     */
 
-    // Split the soundfile names and return an array of names
-    private splitNames(input: string): string[] {
-        // Trim off the curly braces at the start and end, if present
-        let trimmed = input.replace(/^\{|\}$/g, '');
-        // Split the string into an array of strings and remove first and last characters
-        return trimmed.split(";").map(str => str.length <= 2 ? '' : str.substring(1, str.length - 1));
-    }
-
-    /* Init soundfiles memory */
-    private async initSFMemory(context: BaseAudioContext, endMemory: number): Promise<void> {
-
-        // Create memory allocator for soundfiles in wasm memory, starting at the end of DSP memory
-        const allocator = new WasmAllocator(this.fInstance.memory, endMemory);
-
-        // Create soundfile reader
-        const sfReader = new SoundfileReader(allocator, context, this.gPtrSize, this.gSampleSize);
-
-        // Create and fill the soundfile structure
-        let sf_offset: number = this.fDSP;
-        const HEAP = this.fInstance.memory.buffer;
-        //const HEAP32 = new Int32Array(HEAP);
-        this.fSoundfiles.forEach(async ({ name, url }) => {
-            // Create the soundfiles
-            const soundfile = await sfReader.createSoundfile(this.splitNames(url), MAX_CHAN, this.gSampleSize === 8);
-            if (soundfile) {
-
-                soundfile.displayMemory("After createSoundfile");
-
-                //const HEAP32 = new Int32Array(HEAP); // Update HEAP32 after soundfile creation
-                const HEAP32 = soundfile.getHEAP32();
-
-                // Fill the soundfile structure in wasm memory, sounfiles are at the beginning of the DSP memory
-                const ptr = soundfile.getPtr();
-
-                HEAP32[sf_offset++ << 2] = soundfile.getPtr();
-                console.log(`Soundfile ${name} loaded at ${ptr} in wasm memory`);
-
-                console.log("HEAP32[this.fPtr >> 2]", HEAP32[ptr >> 2]);
-                console.log("HEAP32[(this.fDSP + intSize) >> 2]", HEAP32[(ptr + intSize) >> 2]);
-                console.log("HEAP32[(this.fDSP + 2 * intSize) >> 2]", HEAP32[(ptr + 2 * intSize) >> 2]);
-                console.log("HEAP32[(this.fDSP + 3 * intSize) >> 2]", HEAP32[(ptr + 3 * intSize) >> 2]);
-
-            }
-        });
-    }
 
     toString() {
         return `============== Mono Memory layout ==============
@@ -1107,7 +1167,7 @@ export class FaustWebAudioDspVoice {
     private fGainLabel: number[];
     private fKeyLabel: number[];
     private fVelLabel: number[];
-    private fDSP: number;         // Voice DSP location in wasm memory
+    private fDSP: number;            // Voice DSP location in wasm memory
     private fAPI: IFaustDspInstance; // Voice DSP code
     // Accessed by PolyDSPImp class
     fCurNote: number;
