@@ -50,8 +50,8 @@ const buildAudioDeviceMenu = async (faustNode) => {
         const constraints = {
             audio: {
                 echoCancellation: false,
-                mozNoiseSuppression: false,
-                mozAutoGainControl: false,
+                noiseSuppression: false,
+                autoGainControl: false,
                 deviceId: id ? { exact: id } : undefined,
             },
         };

@@ -62,14 +62,14 @@ class FaustWasmInstantiator {
     private static createWasmMemoryMono(sampleSize: number, dspMeta: FaustDspMeta, bufferSize: number) {
         // Memory allocator
         const ptrSize = sampleSize; // Done on wast/wasm backend side
-        const memorySize = dspMeta.size + (dspMeta.inputs + dspMeta.outputs) * (ptrSize + bufferSize * sampleSize) / 65536;
+        const memorySize = (dspMeta.size + (dspMeta.inputs + dspMeta.outputs) * (ptrSize + bufferSize * sampleSize)) / 65536;
         return new WebAssembly.Memory({ initial: memorySize * 2 }); // Safer to have a bit more memory
     }
 
-    private static createMonoDSPInstanceAux(memory: WebAssembly.Memory, instance: WebAssembly.Instance, json: string) {
+    private static createMonoDSPInstanceAux(instance: WebAssembly.Instance, json: string, mem: WebAssembly.Memory | null = null) {
         const functions = instance.exports as IFaustDspInstance & WebAssembly.Exports;
         const api = new FaustDspInstance(functions);
-        //const memory: any = instance.exports.memory;
+        const memory: any = (mem) ? mem : instance.exports.memory;
         return { memory, api, json } as FaustMonoDspInstance;
     }
 
@@ -88,6 +88,7 @@ class FaustWasmInstantiator {
         // Memory will be shared by voice, mixer and (possibly) effect instances
         return this.createWasmMemoryPoly(voices, sampleSize, voiceMeta, effectMeta, 8192);
     }
+
     private static createMixerAux(mixerModule: WebAssembly.Module, memory: WebAssembly.Memory) {
         // Create mixer instance
         const mixerImport = {
@@ -98,6 +99,7 @@ class FaustWasmInstantiator {
         const mixerFunctions = mixerInstance.exports as IFaustMixerInstance & WebAssembly.Exports;
         return mixerFunctions;
     }
+
     // Public API
     static async loadDSPFactory(wasmPath: string, jsonPath: string) {
         const wasmFile = await fetch(wasmPath);
@@ -137,19 +139,31 @@ class FaustWasmInstantiator {
     }
 
     static async createAsyncMonoDSPInstance(factory: LooseFaustDspFactory) {
-        const memory = this.createMemoryMono(factory);
-        //const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport());
-        const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport(memory));
-        //return this.createMonoDSPInstanceAux(instance, factory.json);
-        return this.createMonoDSPInstanceAux(memory, instance, factory.json);
+        const parsedJson = JSON.parse(factory.json);
+        // If the JSON contains a soundfile UI element, we need to create a memory object
+        if (Array.isArray(parsedJson.ui) && parsedJson.ui.some((group: { items: any[]; }) => group.items?.some(item => item.type === "soundfile"))) {
+            const memory = this.createMemoryMono(factory);
+            const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport(memory));
+            return this.createMonoDSPInstanceAux(instance, factory.json, memory);
+        } else {
+            // Otherwise, we can create the instance using the wasm internal memory allocated by the wasm module
+            const instance = await WebAssembly.instantiate(factory.module, this.createWasmImport());
+            return this.createMonoDSPInstanceAux(instance, factory.json);
+        }
     }
 
     static createSyncMonoDSPInstance(factory: LooseFaustDspFactory) {
-        const memory = this.createMemoryMono(factory);
-        //const instance = new WebAssembly.Instance(factory.module, this.createWasmImport());
-        const instance = new WebAssembly.Instance(factory.module, this.createWasmImport(memory));
-        //return this.createMonoDSPInstanceAux(instance, factory.json);
-        return this.createMonoDSPInstanceAux(memory, instance, factory.json);
+        const parsedJson = JSON.parse(factory.json);
+        // If the JSON contains a soundfile UI element, we need to create a memory object
+        if (Array.isArray(parsedJson.ui) && parsedJson.ui.some((group: { items: any[]; }) => group.items?.some(item => item.type === "soundfile"))) {
+            const memory = this.createMemoryMono(factory);
+            const instance = new WebAssembly.Instance(factory.module, this.createWasmImport(memory));
+            return this.createMonoDSPInstanceAux(instance, factory.json, memory);
+        } else {
+            // Otherwise, we can create the instance using the wasm internal memory allocated by the wasm module
+            const instance = new WebAssembly.Instance(factory.module, this.createWasmImport());
+            return this.createMonoDSPInstanceAux(instance, factory.json);
+        }
     }
 
     static async createAsyncPolyDSPInstance(voiceFactory: LooseFaustDspFactory, mixerModule: WebAssembly.Module, voices: number, effectFactory?: LooseFaustDspFactory): Promise<FaustPolyDspInstance> {

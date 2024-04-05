@@ -231,7 +231,6 @@ class Soundfile {
         }
     }
 
-
     emptyFile(part: number, offset: number): number {
         // Set the soundfile buffer in wasm memory
         const HEAP32 = this.fAllocator.getInt32Array();
