@@ -148,7 +148,7 @@ class Soundfile {
         this.fOffset = allocator.alloc(MAX_SOUNDFILE_PARTS * intSize);
         this.fBuffers = this.allocBuffers(curChan, length, maxChan);
 
-        this.displayMemory("Allocated soundfile structure 1");
+        //this.displayMemory("Allocated soundfile structure 1");
 
         // Set the soundfile structure in wasm memory
         const HEAP32 = this.fAllocator.getInt32Array();
@@ -162,7 +162,7 @@ class Soundfile {
             console.log(`allocBuffers AFTER: ${chan} - ${buffer}`);
         }
 
-        this.displayMemory("Allocated soundfile structure 2");
+        //this.displayMemory("Allocated soundfile structure 2");
     }
 
     private allocBuffers(curChan: number, length: number, maxChan: number): number {
@@ -177,7 +177,7 @@ class Soundfile {
             const HEAP32 = this.fAllocator.getInt32Array();
             HEAP32[(buffers >> 2) + chan] = buffer;
         }
-        this.displayMemory("Allocated soundfile buffers");
+        //this.displayMemory("Allocated soundfile buffers");
         return buffers;
     }
 
@@ -195,14 +195,14 @@ class Soundfile {
         HEAP32[(this.fSR >> 2) + part] = buffer.sampleRate;
         HEAP32[(this.fOffset >> 2) + part] = offset;
 
-        this.displayMemory("IN copyToOut, BEFORE copyToOutReal", true);
+        //this.displayMemory("IN copyToOut, BEFORE copyToOutReal", true);
         // Copy the soundfile data to the buffer
         if (this.fIsDouble) {
             this.copyToOutReal64(maxChannels, offset, buffer);
         } else {
             this.copyToOutReal32(maxChannels, offset, buffer);
         }
-        this.displayMemory("IN copyToOut, AFTER copyToOutReal");
+        //this.displayMemory("IN copyToOut, AFTER copyToOutReal");
     }
 
     copyToOutReal32(maxChannels: number, offset: number, buffer: AudioBuffer) {
@@ -277,6 +277,12 @@ class Soundfile {
 
 }
 
+// Definition of the AudioBufferItem type
+type AudioBufferItem = {
+    pathName: string;
+    audioBuffer: AudioBuffer;
+};
+
 /**
  * SoundfileReader class to read soundfile data and copy it to the soundfile buffer.
  */
@@ -286,7 +292,7 @@ class SoundfileReader {
     private readonly fPtrSize: number;
     private readonly fSampleSize: number;
     private readonly fContext;
-    private readonly fAudioBuffers: { pathName: string; audioBuffer: AudioBuffer }[];
+    private readonly fAudioBuffers: AudioBufferItem[];
 
     constructor(allocator: WasmAllocator, context: BaseAudioContext, ptrSize: number, sampleSize: number) {
         this.fAllocator = allocator;
@@ -303,7 +309,7 @@ class SoundfileReader {
      * @param fileName : the name of the file to search for 
      * @returns : the path of the file if found, otherwise an empty string
      */
-    async checkFile(directories: string[], fileName: string): Promise<string> {
+    private async checkFile(directories: string[], fileName: string): Promise<string> {
 
         async function checkFileExists(url: string): Promise<boolean> {
             try {
@@ -347,30 +353,42 @@ class SoundfileReader {
         return pathNameList;
     }
 
+    // Helper function to get an item by its path name
+    private getItemByPathName(pathName: string): AudioBufferItem | undefined {
+        return this.fAudioBuffers.find((element: AudioBufferItem) => element.pathName === pathName);
+    }
+
     /**
      * Get the channels and length values of the given sound resource.
      * 
      * @param pathName : the name of the file, or sound resource identified this way
      * @returns channels and length of the soundfile
      */
-    async getParamsFile(pathName: string): Promise<{ channels: number, length: number }> {
+    private async getParamsFile(pathName: string): Promise<{ channels: number, length: number }> {
         console.log(`Loading sound file from ${pathName}`);
-        const response = await fetch(pathName);
-        if (!response.ok) {
-            console.log(`Failed to load sound file from ${pathName}: ${response.statusText}`);
-            return { channels: 1, length: BUFFER_SIZE };
+
+        const item = this.getItemByPathName(pathName);
+        if (item) {
+            console.log(`getItemByPathName FOUND`);
+            return { channels: item.audioBuffer.numberOfChannels, length: item.audioBuffer.length };
         } else {
+            const response = await fetch(pathName);
+            if (!response.ok) {
+                console.log(`Failed to load sound file from ${pathName}: ${response.statusText}`);
+                return { channels: 1, length: BUFFER_SIZE };
+            } else {
 
-            // Decode the audio data
-            const arrayBuffer = await response.arrayBuffer();
-            const audioBuffer = await this.fContext.decodeAudioData(arrayBuffer);
-            const { numberOfChannels, length } = audioBuffer;
+                // Decode the audio data
+                const arrayBuffer = await response.arrayBuffer();
+                const audioBuffer = await this.fContext.decodeAudioData(arrayBuffer);
+                const { numberOfChannels, length } = audioBuffer;
 
-            // Keep the audio buffer for later use
-            this.fAudioBuffers.push({ pathName, audioBuffer });
+                // Keep the audio buffer for later use
+                this.fAudioBuffers.push({ pathName, audioBuffer });
 
-            // Ensure the returned object keys match what's being returned
-            return { channels: numberOfChannels, length };
+                // Ensure the returned object keys match what's being returned
+                return { channels: numberOfChannels, length };
+            }
         }
     }
 
@@ -385,14 +403,14 @@ class SoundfileReader {
      * @returns the offset in the soundfile buffer
      *
      */
-    readFile(soundfile: Soundfile, pathName: string, part: number, offset: number, maxChan: number): number {
+    private readFile(soundfile: Soundfile, pathName: string, part: number, offset: number, maxChan: number): number {
         // Read the soundfile
         const item = this.fAudioBuffers.find(entry => entry.pathName === pathName);
         // Copy the soundfile data to the buffer
         if (item) {
-            soundfile.displayMemory("BEFORE copyToOut");
+            //soundfile.displayMemory("BEFORE copyToOut");
             soundfile.copyToOut(part, maxChan, offset, item.audioBuffer);
-            soundfile.displayMemory("AFTER copyToOut");
+            //soundfile.displayMemory("AFTER copyToOut");
             return offset + item.audioBuffer.length;
         } else {
             console.error(`Failed to access sound file from ${pathName}`);
@@ -432,7 +450,7 @@ class SoundfileReader {
             // Create the soundfile
             let soundfile = new Soundfile(this.fAllocator, this.fPtrSize, this.fSampleSize, curChan, totalLength, maxChan, pathNameList.length, isDouble);
 
-            soundfile.displayMemory("After soundfile creation");
+            //soundfile.displayMemory("After soundfile creation");
             // Init offset
             let offset = 0;
 
@@ -447,19 +465,19 @@ class SoundfileReader {
                 }
             }
 
-            soundfile.displayMemory("After reading soundfiles");
+            //soundfile.displayMemory("After reading soundfiles");
 
             // Complete with empty parts
             for (let part = pathNameList.length; part < MAX_SOUNDFILE_PARTS; part++) {
                 offset = soundfile.emptyFile(part, offset);
             }
 
-            soundfile.displayMemory("After emptyFile");
+            //soundfile.displayMemory("After emptyFile");
 
             // Share the same buffers for all other channels so that we have maxChan channels available
             soundfile.shareBuffers(curChan, maxChan);
 
-            soundfile.displayMemory("After shareBuffers");
+            //soundfile.displayMemory("After shareBuffers");
 
             return soundfile;
 
@@ -812,49 +830,45 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
         return trimmed.split(";").map(str => str.length <= 2 ? '' : str.substring(1, str.length - 1));
     }
 
+    private async loadSoundfile(sfReader: SoundfileReader, sfOffset: number, name: string, url: string): Promise<void> {
+
+        console.log(`Soundfile ${name} paths: ${url}`);
+
+        // Add standard directories to look for soundfiles
+        const sfDirectories: string[] = [".", "http://127.0.0.1:8000"];
+
+        console.log(`sfDirectories ${sfDirectories}`);
+
+        // Check if the soundfile exists in the given directories and return the real path
+        const sfPathNames: string[] = await sfReader.checkFiles(sfDirectories, FaustBaseWebAudioDsp.splitNames(url));
+
+        console.log(`Soundfile ${name} paths: ${sfPathNames}`);
+
+        // Create the soundfiles
+        const soundfile = await sfReader.createSoundfile(sfPathNames, MAX_CHAN, this.fSampleSize === 8);
+        if (soundfile) {
+
+            //soundfile.displayMemory("After createSoundfile");
+
+            // Update HEAP32 after soundfile creation
+            const HEAP32 = soundfile.getHEAP32();
+
+            // Fill the soundfile structure in wasm memory, sounfiles are at the beginning of the DSP memory
+            const ptr = soundfile.getPtr();
+            console.log(`Soundfile ${name} loaded at ${ptr} in wasm memory with sfOffset ${sfOffset}`);
+
+            HEAP32[sfOffset >> 2] = soundfile.getPtr();
+        }
+    }
+
     /* Init soundfiles memory */
-    protected async initSFMemory(context: BaseAudioContext, memory: WebAssembly.Memory, endMemory: number, baseDSP: number): Promise<void> {
-
-        // Create memory allocator for soundfiles in wasm memory, starting at the end of DSP memory
-        const allocator = new WasmAllocator(memory, endMemory);
-
-        // Create soundfile reader
-        const sfReader = new SoundfileReader(allocator, context, this.fPtrSize, this.fSampleSize);
-
+    protected async initSFMemory(allocator: WasmAllocator, sfReader: SoundfileReader, baseDSP: number): Promise<void> {
         // Create and fill the soundfile structure
         let sfOffset: number = baseDSP;
-
-        this.fSoundfiles.forEach(async ({ name, url }) => {
-
-            console.log(`Soundfile ${name} paths: ${url}`);
-
-            // Add standard directories to look for soundfiles
-            const sfDirectories: string[] = [".", "http://127.0.0.1:8000"];
-
-            console.log(`sfDirectories ${sfDirectories}`);
-
-            // Check if the soundfile exists in the given directories and return the real path
-            const sfPathNames: string[] = await sfReader.checkFiles(sfDirectories, FaustBaseWebAudioDsp.splitNames(url));
-
-            console.log(`Soundfile ${name} paths: ${sfPathNames}`);
-
-            // Create the soundfiles
-            const soundfile = await sfReader.createSoundfile(sfPathNames, MAX_CHAN, this.fSampleSize === 8);
-            if (soundfile) {
-
-                soundfile.displayMemory("After createSoundfile");
-
-                // Update HEAP32 after soundfile creation
-                const HEAP32 = soundfile.getHEAP32();
-
-                // Fill the soundfile structure in wasm memory, sounfiles are at the beginning of the DSP memory
-                const ptr = soundfile.getPtr();
-                console.log(`Soundfile ${name} loaded at ${ptr} in wasm memory with sfOffset ${sfOffset}`);
-
-                HEAP32[sfOffset >> 2] = soundfile.getPtr();
-                sfOffset += this.fPtrSize;
-            }
-        });
+        for (const { name, url } of this.fSoundfiles) {
+            await this.loadSoundfile(sfReader, sfOffset, name, url);
+            sfOffset += this.fPtrSize;
+        };
     }
 
     protected updateOutputs() {
@@ -983,11 +997,17 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
     }
 
     async init(context: BaseAudioContext | null): Promise<void> {
-
         // Init soundfiles memory is needed
         if (this.fSoundfiles.length > 0 && context) {
             // Init soundfiles memory
-            await this.initSFMemory(context, this.fInstance.memory, this.fEndMemory, this.fDSP);
+
+            // Create memory allocator for soundfiles in wasm memory, starting at the end of DSP memory
+            const allocator = new WasmAllocator(this.fInstance.memory, this.fEndMemory);
+
+            // Create soundfile reader
+            const sfReader = new SoundfileReader(allocator, context, this.fPtrSize, this.fSampleSize);
+
+            await this.initSFMemory(allocator, sfReader, this.fDSP);
         }
     }
 
@@ -1049,7 +1069,6 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
         bool fIsDouble; // keep the sample format (float or double)
     }
     */
-
 
     toString() {
         return `============== Mono Memory layout ==============
@@ -1316,6 +1335,17 @@ export class FaustPolyWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
 
         // Init effect
         if (this.fInstance.effectAPI) this.fInstance.effectAPI.init(this.fEffect, sampleRate);
+    }
+
+    async init(context: BaseAudioContext | null): Promise<void> {
+
+        // Init soundfiles memory is needed
+        if (this.fSoundfiles.length > 0 && context) {
+            // Init soundfiles memory
+            for (let voice = 0; voice < this.fInstance.voices; voice++) {
+                //await this.initSFMemory(context, this.fInstance.memory, this.fEndMemory, this.fJSONDsp.size * voice);
+            }
+        }
     }
 
     private initMemory() {
