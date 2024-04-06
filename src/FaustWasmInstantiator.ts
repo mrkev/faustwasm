@@ -56,7 +56,7 @@ class FaustWasmInstantiator {
             * (ptrSize + bufferSize * sampleSize)
         ) / 65536;
         memorySize = Math.max(2, memorySize); // At least 2
-        return new WebAssembly.Memory({ initial: memorySize, maximum: memorySize });
+        return new WebAssembly.Memory({ initial: memorySize });
     };
 
     private static createWasmMemoryMono(sampleSize: number, dspMeta: FaustDspMeta, bufferSize: number) {

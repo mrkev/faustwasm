@@ -485,7 +485,8 @@ export class FaustPolyDspGenerator implements IFaustPolyDspGenerator {
         voiceFactory = this.voiceFactory as LooseFaustDspFactory,
         mixerModule = this.mixerModule,
         effectFactory = this.effectFactory as LooseFaustDspFactory | null,
-        sp = false as SP,
+        //sp = false as SP,
+        sp = true as SP,
         bufferSize = 1024,
         processorName = ((voiceFactory?.shaKey || "") + (effectFactory?.shaKey || "")) || `${name}_poly`
     ): Promise<SP extends true ? FaustPolyScriptProcessorNode | null : FaustPolyAudioWorkletNode | null> {
@@ -498,8 +499,7 @@ export class FaustPolyDspGenerator implements IFaustPolyDspGenerator {
             const instance = await FaustWasmInstantiator.createAsyncPolyDSPInstance(voiceFactory, mixerModule, voices, effectFactory || undefined);
             const polyDsp = new FaustPolyWebAudioDsp(instance, context.sampleRate, sampleSize, bufferSize);
             // Initialize the DSP instance, possibly loading soundfiles
-            //await polyDsp.init(context);
-
+            await polyDsp.init(context);
             const sp = context.createScriptProcessor(bufferSize, polyDsp.getNumInputs(), polyDsp.getNumOutputs()) as FaustPolyScriptProcessorNode;
             Object.setPrototypeOf(sp, FaustPolyScriptProcessorNode.prototype);
             sp.init(polyDsp);

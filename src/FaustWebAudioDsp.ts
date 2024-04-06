@@ -54,8 +54,8 @@ class WasmAllocator {
             // WebAssembly memory pages are 64KiB each.
             const neededPages = Math.ceil((newOffset - totalMemoryBytes) / 65536);
             // Grow the memory by the required number of pages.
-            this.memory.grow(neededPages);
             console.log(`GROW: ${neededPages} pages`);
+            this.memory.grow(neededPages);
         }
 
         // Update the allocated bytes to the new offset.
@@ -1341,9 +1341,16 @@ export class FaustPolyWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
 
         // Init soundfiles memory is needed
         if (this.fSoundfiles.length > 0 && context) {
+
+            // Create memory allocator for soundfiles in wasm memory, starting at the end of DSP memory
+            const allocator = new WasmAllocator(this.fInstance.memory, this.fEndMemory);
+
+            // Create soundfile reader
+            const sfReader = new SoundfileReader(allocator, context, this.fPtrSize, this.fSampleSize);
+
             // Init soundfiles memory
             for (let voice = 0; voice < this.fInstance.voices; voice++) {
-                //await this.initSFMemory(context, this.fInstance.memory, this.fEndMemory, this.fJSONDsp.size * voice);
+                await this.initSFMemory(allocator, sfReader, this.fJSONDsp.size * voice);
             }
         }
     }
@@ -1475,6 +1482,12 @@ export class FaustPolyWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
 
         // Check DSP state
         if (this.fDestroyed) return false;
+
+        // Init memory on first call (since WebAssembly.memory.grow() may have been called)
+        if (this.fFirstCall) {
+            this.initMemory();
+            this.fFirstCall = false;
+        }
 
         // Check Processing state: the node returns 'true' to stay in the graph, even if not processing
         if (!this.fProcessing) return true;
