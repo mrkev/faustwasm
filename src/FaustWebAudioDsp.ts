@@ -146,7 +146,7 @@ class Soundfile {
         this.fLength = allocator.alloc(MAX_SOUNDFILE_PARTS * intSize);
         this.fSR = allocator.alloc(MAX_SOUNDFILE_PARTS * intSize);
         this.fOffset = allocator.alloc(MAX_SOUNDFILE_PARTS * intSize);
-        this.fBuffers = this.allocBuffers(ptrSize, sampleSize, curChan, length, maxChan);
+        this.fBuffers = this.allocBuffers(curChan, length, maxChan);
 
         this.displayMemory("Allocated soundfile structure 1");
 
@@ -165,13 +165,13 @@ class Soundfile {
         this.displayMemory("Allocated soundfile structure 2");
     }
 
-    private allocBuffers(ptrSize: number, sampleSize: number, curChan: number, length: number, maxChan: number): number {
-        const buffers = this.fAllocator.alloc(maxChan * ptrSize);
+    private allocBuffers(curChan: number, length: number, maxChan: number): number {
+        const buffers = this.fAllocator.alloc(maxChan * this.fPtrSize);
 
         console.log(`allocBuffers buffers: ${buffers}`);
 
         for (let chan = 0; chan < curChan; chan++) {
-            const buffer: number = this.fAllocator.alloc(length * sampleSize);
+            const buffer: number = this.fAllocator.alloc(length * this.fSampleSize);
             // HEAP32 is the Int32Array view of the memory buffer which can change after grow in `alloc` method
             // so we need to recompute the buffer address
             const HEAP32 = this.fAllocator.getInt32Array();
@@ -852,11 +852,6 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
 
                 HEAP32[sfOffset >> 2] = soundfile.getPtr();
                 sfOffset += this.fPtrSize;
-
-                console.log("HEAP32[this.fPtr >> 2]", HEAP32[ptr >> 2]);
-                console.log("HEAP32[(this.fDSP + fPtrSize) >> 2]", HEAP32[(ptr + this.fPtrSize) >> 2]);
-                console.log("HEAP32[(this.fDSP + 2 * fPtrSize) >> 2]", HEAP32[(ptr + 2 * this.fPtrSize) >> 2]);
-                console.log("HEAP32[(this.fDSP + 3 * fPtrSize) >> 2]", HEAP32[(ptr + 3 * this.fPtrSize) >> 2]);
             }
         });
     }
