@@ -692,6 +692,7 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
 
     // Soundfile handling
     protected fSoundfiles: { name: string; url: string }[];
+    protected fEndMemory: number; // Keep the end of memory offset before soundfiles
 
     // Buffers in wasm memory
     protected fAudioInputs!: number;
@@ -962,7 +963,6 @@ export class FaustMonoWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
 
     private fInstance: FaustMonoDspInstance;
     private fDSP!: number;
-    private readonly fEndMemory: number; // Keep the end of memory offset before soundfiles
 
     constructor(instance: FaustMonoDspInstance, sampleRate: number, sampleSize: number, bufferSize: number) {
 
@@ -1300,7 +1300,7 @@ export class FaustPolyWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
         if (this.fJSONEffect) FaustBaseWebAudioDsp.parseUI(this.fJSONEffect.ui, this.fUICallback);
 
         // Setup wasm memory
-        this.initMemory();
+        this.fEndMemory = this.initMemory();
 
         // Init DSP voices
         this.fVoiceTable = [];
@@ -1337,6 +1337,9 @@ export class FaustPolyWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
         const $audioOutputs = $audioInputs + this.getNumInputs() * this.fBufferSize * this.fSampleSize;
         const $audioMixing = $audioOutputs + this.getNumOutputs() * this.fBufferSize * this.fSampleSize;
 
+        // Compute memory end in bytes
+        const endMemory = $audioMixing + this.getNumOutputs() * this.fBufferSize * this.fSampleSize;
+
         // Setup Int32 and Real views of the memory
         const HEAP = this.fInstance.memory.buffer;
         const HEAP32 = new Int32Array(HEAP);
@@ -1364,6 +1367,8 @@ export class FaustPolyWebAudioDsp extends FaustBaseWebAudioDsp implements IFaust
                 this.fOutChannels[chan] = HEAPF.subarray(dspOutChans[chan] >> Math.log2(this.fSampleSize), (dspOutChans[chan] + this.fBufferSize * this.fSampleSize) >> Math.log2(this.fSampleSize));
             }
         }
+
+        return endMemory;
     }
 
     toString() {
