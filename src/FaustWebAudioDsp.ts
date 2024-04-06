@@ -486,6 +486,10 @@ class SoundfileReader {
             return null;
         }
     }
+
+    getHEAP32(): Int32Array {
+        return this.fAllocator.getInt32Array();
+    }
 }
 
 /**
@@ -689,6 +693,13 @@ export interface IFaustPolyWebAudioDsp extends IFaustBaseWebAudioDsp {
 }
 export interface IFaustPolyWebAudioNode extends IFaustPolyWebAudioDsp, AudioNode { }
 
+// Definition of the SoundfileItem type
+type SoundfileItem = {
+    name: string;
+    url: string;
+    basePtr: number;
+};
+
 export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
     protected fOutputHandler: OutputParamHandler | null;
     protected fComputeHandler: ComputeHandler | null;
@@ -709,7 +720,7 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
     protected fDescriptor: FaustUIInputItem[];
 
     // Soundfile handling
-    protected fSoundfiles: { name: string; url: string }[];
+    protected fSoundfiles: SoundfileItem[];
     protected fEndMemory: number; // Keep the end of memory offset before soundfiles
 
     // Buffers in wasm memory
@@ -726,10 +737,9 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
     protected fPathTable: { [address: string]: number };
     protected fUICallback: UIHandler;
 
+    // Audio callback
     protected fProcessing: boolean;
-
     protected fDestroyed: boolean;
-
     protected fFirstCall: boolean;
 
     protected fJSONDsp!: FaustDspMeta;
@@ -755,6 +765,7 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
         this.fInputsItems = [];
         this.fOutputsItems = [];
         this.fDescriptor = [];
+
         this.fSoundfiles = [];
 
         this.fPitchwheelLabel = [];
@@ -790,7 +801,7 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
                     }
                 });
             } else if (item.type === "soundfile") {
-                this.fSoundfiles.push({ name: item.label, url: item.url });
+                this.fSoundfiles.push({ name: item.label, url: item.url, basePtr: -1 });
             }
         }
     }
@@ -829,7 +840,14 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
         // Split the string into an array of strings and remove first and last characters
         return trimmed.split(";").map(str => str.length <= 2 ? '' : str.substring(1, str.length - 1));
     }
-
+    /**
+     *  Load a soundfile possibly containing several parts. 
+     * 
+     * @param sfReader : the soundfile reader 
+     * @param sfOffset : the offset in the wasm memory
+     * @param name : the name of the soundfile
+     * @param url : the url of the soundfile
+     */
     private async loadSoundfile(sfReader: SoundfileReader, sfOffset: number, name: string, url: string): Promise<void> {
 
         console.log(`Soundfile ${name} paths: ${url}`);
@@ -844,20 +862,41 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
 
         console.log(`Soundfile ${name} paths: ${sfPathNames}`);
 
-        // Create the soundfiles
-        const soundfile = await sfReader.createSoundfile(sfPathNames, MAX_CHAN, this.fSampleSize === 8);
-        if (soundfile) {
+        const item = this.fSoundfiles.find((element: SoundfileItem) => element.url === url);
+        if (item) {
+            // Use the cached Soundfile
+            if (item.basePtr !== -1) {
+                // Update HEAP32 after soundfile creation
+                const HEAP32 = sfReader.getHEAP32();
 
-            //soundfile.displayMemory("After createSoundfile");
+                // Fill the soundfile structure in wasm memory, sounfiles are at the beginning of the DSP memory
+                console.log(`Soundfile ${name} loaded at ${item.basePtr} in wasm memory with sfOffset ${sfOffset}`);
+                console.log(`Soundfile CACHE ${url}}`);
 
-            // Update HEAP32 after soundfile creation
-            const HEAP32 = soundfile.getHEAP32();
+                HEAP32[sfOffset >> 2] = item.basePtr;
+            } else {
 
-            // Fill the soundfile structure in wasm memory, sounfiles are at the beginning of the DSP memory
-            const ptr = soundfile.getPtr();
-            console.log(`Soundfile ${name} loaded at ${ptr} in wasm memory with sfOffset ${sfOffset}`);
+                // Create the soundfiles
+                const soundfile = await sfReader.createSoundfile(sfPathNames, MAX_CHAN, this.fSampleSize === 8);
+                if (soundfile) {
 
-            HEAP32[sfOffset >> 2] = soundfile.getPtr();
+                    //soundfile.displayMemory("After createSoundfile");
+
+                    // Update HEAP32 after soundfile creation
+                    const HEAP32 = soundfile.getHEAP32();
+
+                    // Fill the soundfile structure in wasm memory, sounfiles are at the beginning of the DSP memory
+                    item.basePtr = soundfile.getPtr();
+                    console.log(`Soundfile ${name} loaded at ${item.basePtr} in wasm memory with sfOffset ${sfOffset}`);
+
+                    HEAP32[sfOffset >> 2] = item.basePtr;
+
+                } else {
+                    console.log(`Soundfile ${name} for ${url} cannot be created !}`);
+                }
+            }
+        } else {
+            console.log(`Soundfile with ${url} cannot be found !}`);
         }
     }
 
