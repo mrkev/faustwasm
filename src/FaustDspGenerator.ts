@@ -199,8 +199,7 @@ export class FaustMonoDspGenerator implements IFaustMonoDspGenerator {
         context: BaseAudioContext,
         name = this.name,
         factory = this.factory as LooseFaustDspFactory,
-        //sp = false as SP,
-        sp = true as SP,
+        sp = false as SP,
         bufferSize = 1024,
         processorName = factory?.shaKey || name
     ): Promise<SP extends true ? FaustMonoScriptProcessorNode | null : FaustMonoAudioWorkletNode | null> {
@@ -489,8 +488,7 @@ export class FaustPolyDspGenerator implements IFaustPolyDspGenerator {
         voiceFactory = this.voiceFactory as LooseFaustDspFactory,
         mixerModule = this.mixerModule,
         effectFactory = this.effectFactory as LooseFaustDspFactory | null,
-        //sp = false as SP,
-        sp = true as SP,
+        sp = false as SP,
         bufferSize = 1024,
         processorName = ((voiceFactory?.shaKey || "") + (effectFactory?.shaKey || "")) || `${name}_poly`
     ): Promise<SP extends true ? FaustPolyScriptProcessorNode | null : FaustPolyAudioWorkletNode | null> {
