@@ -991,6 +991,8 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
     getUI() { return this.fJSONDsp.ui; }
     getDescriptors() { return this.fDescriptor; }
 
+    hasSoundfiles() { return this.fSoundfiles.length > 0; }
+
     start() {
         this.fProcessing = true;
     }
