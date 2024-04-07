@@ -112,6 +112,7 @@ export interface IFaustPolyDspGenerator {
         voiceFactory: FaustDspFactory | null;
         effectFactory?: FaustDspFactory | null;
     } | null>;
+
     /**
      * Create a polyphonic WebAudio node (either ScriptProcessorNode or AudioWorkletNode).
      *
@@ -258,6 +259,7 @@ const dependencies = {
             return node as SP extends true ? FaustMonoScriptProcessorNode : FaustMonoAudioWorkletNode;
         }
     }
+
     async createFFTNode(
         context: BaseAudioContext,
         fftUtils: typeof FFTUtils,
@@ -328,6 +330,7 @@ const dependencies = {
         }
         return node;
     }
+
     async createAudioWorkletProcessor(
         name = this.name,
         factory = this.factory as LooseFaustDspFactory,
@@ -362,6 +365,7 @@ const dependencies = {
             throw e;
         }
     }
+
     async createOfflineProcessor(
         sampleRate: number,
         bufferSize: number,
@@ -548,6 +552,7 @@ const dependencies = {
             return node as SP extends true ? FaustPolyScriptProcessorNode : FaustPolyAudioWorkletNode;
         }
     }
+
     async createAudioWorkletProcessor(
         name = this.name,
         voiceFactory = this.voiceFactory as LooseFaustDspFactory,
@@ -585,6 +590,7 @@ const dependencies = {
             throw e;
         }
     }
+
     async createOfflineProcessor(
         sampleRate: number,
         bufferSize: number,

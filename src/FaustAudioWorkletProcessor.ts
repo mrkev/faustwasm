@@ -42,7 +42,6 @@ export interface FaustPolyAudioWorkletProcessorOptions extends FaustAudioWorklet
     effectFactory?: LooseFaustDspFactory;
 }
 
-
 // Dynamic AudioWorkletProcessor code generator
 const getFaustAudioWorkletProcessor = <Poly extends boolean = false>(dependencies: FaustAudioWorkletProcessorDependencies<Poly>, faustData: FaustData, register = true): typeof AudioWorkletProcessor => {
     const { registerProcessor, AudioWorkletProcessor, sampleRate } = globalThis as unknown as AudioWorkletGlobalScope;
@@ -51,7 +50,7 @@ const getFaustAudioWorkletProcessor = <Poly extends boolean = false>(dependencie
         FaustBaseWebAudioDsp,
         FaustWasmInstantiator
     } = dependencies;
-    
+
     const {
         processorName,
         dspName,
@@ -88,7 +87,7 @@ const getFaustAudioWorkletProcessor = <Poly extends boolean = false>(dependencie
 
             // Setup port message handling
             this.port.onmessage = (e: MessageEvent) => this.handleMessageAux(e);
-            
+
             const { parameterDescriptors } = (this.constructor as typeof AudioWorkletProcessor);
             parameterDescriptors.forEach((pd) => {
                 this.paramValuesCache[pd.name] = pd.defaultValue || 0;
