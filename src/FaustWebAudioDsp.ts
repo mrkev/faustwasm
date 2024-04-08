@@ -843,7 +843,7 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
         console.log(`Soundfile ${name} paths: ${url}`);
 
         // Add standard directories to look for soundfiles
-        const sfDirectories: string[] = [".", "http://127.0.0.1:8000"];
+        const sfDirectories: string[] = ["", ".", "http://127.0.0.1:8000"];
 
         console.log(`sfDirectories ${sfDirectories}`);
 

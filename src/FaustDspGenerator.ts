@@ -190,9 +190,12 @@ export class FaustMonoDspGenerator implements IFaustMonoDspGenerator {
     }
     async compile(compiler: IFaustCompiler, name: string, code: string, args: string) {
         this.factory = await compiler.createMonoDSPFactory(name, code, args);
-        if (!this.factory) return null;
-        this.name = name;
-        return this;
+        if (this.factory) {
+            this.name = name;
+            return this;
+        } else {
+            return null;
+        }
     }
 
     async createNode<SP extends boolean = false>(
