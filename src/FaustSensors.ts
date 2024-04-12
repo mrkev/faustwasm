@@ -128,7 +128,7 @@ interface ValueConverter {
  * UpdatableValueConverter interface
  */
 
-interface UpdatableValueConverter extends ValueConverter {
+export interface UpdatableValueConverter extends ValueConverter {
     fActive: boolean;
 
     setMappingValues: (amin: number, amid: number, amax: number, min: number, init: number, max: number) => void;
@@ -198,7 +198,7 @@ export class AccDownConverter implements UpdatableValueConverter {
 /**
  * AccUpDownConverter class, convert accelerometer value to Faust value
  */
-export class AccUpDownConverter {
+export class AccUpDownConverter implements UpdatableValueConverter {
     fA2F: Interpolator3pt;
     fF2A: Interpolator;
     fActive: boolean = true;
@@ -226,7 +226,7 @@ export class AccUpDownConverter {
 /**
  * AccDownUpConverter class, convert accelerometer value to Faust value
  */
-export class AccDownUpConverter {
+export class AccDownUpConverter implements UpdatableValueConverter {
     fA2F: Interpolator3pt;
     fF2A: Interpolator;
     fActive: boolean = true;
@@ -249,4 +249,31 @@ export class AccDownUpConverter {
 
     setActive(onOff: boolean): void { this.fActive = onOff };
     getActive(): boolean { return this.fActive };
+}
+
+/**
+ * Public function to build the accelerometer handler
+ *
+ * @param curve : Curve
+ * @param amin : number 
+ * @param amid : number 
+ * @param amax : number 
+ * @param min : number 
+ * @param init : number 
+ * @param max : number 
+ * @returns : UpdatableValueConverter built for the given curve
+ */
+export function buildAccHandler(curve: Curve, amin: number, amid: number, amax: number, min: number, init: number, max: number): UpdatableValueConverter {
+    switch (curve) {
+        case Curve.Up:
+            return new AccUpConverter(amin, amid, amax, min, init, max);
+        case Curve.Down:
+            return new AccDownConverter(amin, amid, amax, min, init, max);
+        case Curve.UpDown:
+            return new AccUpDownConverter(amin, amid, amax, min, init, max);
+        case Curve.DownUp:
+            return new AccDownUpConverter(amin, amid, amax, min, init, max);
+        default:
+            return new AccUpConverter(amin, amid, amax, min, init, max);
+    }
 }

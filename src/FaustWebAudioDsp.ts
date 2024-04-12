@@ -1,5 +1,7 @@
 import type { FaustMonoDspInstance, FaustPolyDspInstance, IFaustDspInstance } from "./FaustDspInstance";
 import type { FaustDspMeta, FaustUIDescriptor, FaustUIGroup, FaustUIInputItem, FaustUIItem } from "./types";
+import type { Curve, UpdatableValueConverter } from "./FaustSensors";
+import { buildAccHandler } from "./FaustSensors"
 
 // Public API
 export type OutputParamHandler = (path: string, value: number) => void;
@@ -760,6 +762,9 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
     protected fSoundfiles: SoundfileItem[];
     protected fEndMemory: number; // Keep the end of memory offset before soundfiles
 
+    // Accelerometer handling
+    protected fAcc: UpdatableValueConverter[]; // array of accelerometer handlers, to be called with DeviceMotionEvent
+
     // Buffers in wasm memory
     protected fAudioInputs!: number;
     protected fAudioOutputs!: number;
@@ -823,18 +828,26 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
                 this.fInputsItems.push(item.address);
                 this.fPathTable[item.address] = item.index;
                 this.fDescriptor.push(item);
-                // Parse 'midi' metadata
                 if (!item.meta) return;
                 item.meta.forEach((meta) => {
+                    // Parse 'midi' metadata
                     const { midi } = meta;
-                    if (!midi) return;
-                    const strMidi = midi.trim();
-                    if (strMidi === "pitchwheel") {
-                        this.fPitchwheelLabel.push({ path: item.address, min: item.min as number, max: item.max as number });
-                    } else {
-                        const matched = strMidi.match(/^ctrl\s(\d+)/);
-                        if (!matched) return;
-                        this.fCtrlLabel[parseInt(matched[1])].push({ path: item.address, min: item.min as number, max: item.max as number });
+                    if (midi) {
+                        const strMidi = midi.trim();
+                        if (strMidi === "pitchwheel") {
+                            this.fPitchwheelLabel.push({ path: item.address, min: item.min as number, max: item.max as number });
+                        } else {
+                            const matched = strMidi.match(/^ctrl\s(\d+)/);
+                            if (matched) {
+                                this.fCtrlLabel[parseInt(matched[1])].push({ path: item.address, min: item.min as number, max: item.max as number });
+                            }
+                        }
+                    }
+                    // Parse 'acc' metadata
+                    const { acc } = meta;
+                    if (acc) {
+                        const strAcc: string[] = acc.trim().split(" ");
+
                     }
                 });
             } else if (item.type === "soundfile") {
@@ -876,6 +889,36 @@ export class FaustBaseWebAudioDsp implements IFaustBaseWebAudioDsp {
         let trimmed = input.replace(/^\{|\}$/g, '');
         // Split the string into an array of strings and remove first and last characters
         return trimmed.split(";").map(str => str.length <= 2 ? '' : str.substring(1, str.length - 1));
+    }
+
+    // Build the accelerometer handler
+    private setupAccHandler(path: string, curve: Curve, amin: number, amid: number, amax: number, min: number, init: number, max: number) {
+
+        const handler: UpdatableValueConverter = buildAccHandler(curve, amin, amid, amax, min, init, max);
+
+
+        /*
+        return (data: DeviceMotionEvent) => {
+            // Dispatch on curves types
+            switch (acc[1]) { //
+
+                case "0":
+                    UpdatableValueConverter handler = new AccUpConverter(0, 1, 2, 3, 4, 4);
+                    //this.setParamValue(acc[1], data.acceleration.x);
+                    break;
+                case "1":
+                    //this.setParamValue(acc[1], data.acceleration.y);
+                    break;
+
+
+            }
+            acc.forEach((item) => {
+                const [path, min, max] = item.split(" ");
+                const value = FaustBaseWebAudioDsp.remap(data.acceleration.x, -9.81, 9.81, parseFloat(min), parseFloat(max));
+                this.setParamValue(path, value);
+            });
+        }
+        */
     }
 
     private extractURLsFromJSON(): string[] {
